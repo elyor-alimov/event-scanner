@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Сканер входа</title>
+<script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0f0f0f;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .header {
+    padding: 16px 20px 12px;
+    text-align: center;
+    border-bottom: 0.5px solid rgba(255,255,255,0.08);
+  }
+
+  .header h1 {
+    font-size: 16px;
+    font-weight: 500;
+    color: #fff;
+  }
+
+  .header p {
+    font-size: 12px;
+    color: rgba(255,255,255,0.4);
+    margin-top: 2px;
+  }
+
+  .camera-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    background: #000;
+    overflow: hidden;
+  }
+
+  #video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  #canvas { display: none; }
+
+  .scan-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .scan-frame {
+    width: 60%;
+    aspect-ratio: 1;
+    position: relative;
+  }
+
+  .scan-frame::before,
+  .scan-frame::after,
+  .scan-frame span::before,
+  .scan-frame span::after {
+    content: '';
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border-color: #fff;
+    border-style: solid;
+    border-width: 0;
+  }
+
+  .scan-frame::before { top: 0; left: 0; border-top-width: 2.5px; border-left-width: 2.5px; border-radius: 3px 0 0 0; }
+  .scan-frame::after { top: 0; right: 0; border-top-width: 2.5px; border-right-width: 2.5px; border-radius: 0 3px 0 0; }
+  .scan-frame span::before { bottom: 0; left: 0; border-bottom-width: 2.5px; border-left-width: 2.5px; border-radius: 0 0 0 3px; }
+  .scan-frame span::after { bottom: 0; right: 0; border-bottom-width: 2.5px; border-right-width: 2.5px; border-radius: 0 0 3px 0; }
+
+  .scan-line-anim {
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #4ade80, transparent);
+    animation: scanMove 2s linear infinite;
+    top: 0;
+  }
+
+  @keyframes scanMove {
+    0% { top: 0; }
+    100% { top: 100%; }
+  }
+
+  .scan-hint {
+    position: absolute;
+    bottom: 16px;
+    left: 0; right: 0;
+    text-align: center;
+    font-size: 12px;
+    color: rgba(255,255,255,0.4);
+  }
+
+  .bottom-panel {
+    padding: 16px 20px;
+    flex: 1;
+  }
+
+  .btn {
+    width: 100%;
+    padding: 13px;
+    border-radius: 12px;
+    border: none;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  .btn:active { opacity: 0.8; }
+
+  .btn-outline {
+    background: rgba(255,255,255,0.06);
+    border: 0.5px solid rgba(255,255,255,0.15);
+    color: #fff;
+  }
+
+  .btn-green {
+    background: #16a34a;
+    color: #fff;
+  }
+
+  .btn-amber {
+    background: #b45309;
+    color: #fff;
+  }
+
+  .btn-gray {
+    background: rgba(255,255,255,0.06);
+    border: 0.5px solid rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.7);
+  }
+
+  /* Модальное окно */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 100;
+  }
+
+  .modal-overlay.active { display: flex; }
+
+  .modal {
+    background: #1c1c1e;
+    border: 0.5px solid rgba(255,255,255,0.12);
+    border-radius: 20px;
+    padding: 24px 20px 20px;
+    width: 100%;
+    max-width: 320px;
+    text-align: center;
+  }
+
+  .modal-icon {
+    font-size: 40px;
+    margin-bottom: 10px;
+  }
+
+  .modal-title {
+    font-size: 17px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .modal-title.success { color: #4ade80; }
+  .modal-title.warning { color: #fbbf24; }
+
+  .modal-sub {
+    font-size: 13px;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 20px;
+    line-height: 1.5;
+  }
+
+  /* Ручной ввод */
+  .manual-panel {
+    display: none;
+  }
+
+  .manual-panel.active { display: block; }
+
+  .camera-wrap.hidden { display: none; }
+
+  .panel-title {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 14px;
+    color: #fff;
+  }
+
+  .section-label {
+    font-size: 12px;
+    color: rgba(255,255,255,0.4);
+    margin-bottom: 8px;
+  }
+
+  .event-list { margin-bottom: 14px; }
+
+  .event-item {
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 0.5px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04);
+    font-size: 13px;
+    color: #fff;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .event-item:active { background: rgba(255,255,255,0.1); }
+
+  .event-item.selected {
+    border-color: #16a34a;
+    background: rgba(22,163,74,0.15);
+  }
+
+  .event-item.other {
+    border-color: #b45309;
+    background: rgba(180,83,9,0.12);
+    color: #fbbf24;
+  }
+
+  .event-item.other.selected {
+    border-color: #fbbf24;
+    background: rgba(180,83,9,0.25);
+  }
+
+  .extra-fields {
+    display: none;
+    margin-bottom: 14px;
+  }
+
+  .extra-fields.active { display: block; }
+
+  .input-field {
+    width: 100%;
+    padding: 11px 14px;
+    border-radius: 10px;
+    border: 0.5px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.06);
+    color: #fff;
+    font-size: 13px;
+    margin-bottom: 8px;
+    outline: none;
+  }
+
+  .input-field::placeholder { color: rgba(255,255,255,0.3); }
+  .input-field:focus { border-color: rgba(255,255,255,0.3); }
+
+  .name-section { margin-bottom: 16px; }
+
+  .error-banner {
+    background: rgba(239,68,68,0.15);
+    border: 0.5px solid rgba(239,68,68,0.4);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #fca5a5;
+    margin-bottom: 12px;
+    display: none;
+  }
+
+  .error-banner.active { display: block; }
+
+  .invalid-panel { display: none; }
+  .invalid-panel.active { display: block; }
+
+  .invalid-banner {
+    background: rgba(239,68,68,0.12);
+    border: 0.5px solid rgba(239,68,68,0.3);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+  }
+
+  .invalid-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: #fca5a5;
+    margin-bottom: 3px;
+  }
+
+  .invalid-sub {
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+  }
+
+  .divider {
+    height: 0.5px;
+    background: rgba(255,255,255,0.08);
+    margin: 16px 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Сканер входа</h1>
+  <p id="header-sub">Наведите камеру на QR-код</p>
+</div>
+
+<!-- Камера -->
+<div class="camera-wrap" id="cameraWrap">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div class="scan-overlay">
+    <div class="scan-frame">
+      <span></span>
+      <div class="scan-line-anim"></div>
+    </div>
+  </div>
+  <div class="scan-hint">Совместите QR-код с рамкой</div>
+</div>
+
+<!-- Нижняя панель — сканер -->
+<div class="bottom-panel" id="scanPanel">
+  <button class="btn btn-outline" onclick="showManual(null)">Вписать вручную</button>
+</div>
+
+<!-- Нижняя панель — ручной ввод -->
+<div class="bottom-panel manual-panel" id="manualPanel">
+  <div class="panel-title" id="manualTitle">Вписать вручную</div>
+
+  <!-- Баннер для недействительного билета -->
+  <div class="invalid-panel" id="invalidPanel">
+    <div class="invalid-banner">
+      <div class="invalid-title" id="invalidTitle">Билет недействителен</div>
+      <div class="invalid-sub" id="invalidSub"></div>
+    </div>
+    <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 12px;">Всё равно записать вручную?</div>
+  </div>
+
+  <div class="section-label">Выберите мероприятие:</div>
+  <div class="event-list" id="eventList"></div>
+
+  <!-- Доп поля для "Другое" -->
+  <div class="extra-fields" id="extraFields">
+    <input class="input-field" id="otherEventName" placeholder="Название мероприятия" />
+    <input class="input-field" id="otherEventDate" placeholder="Дата (напр. 25.05.2026)" />
+  </div>
+
+  <div class="name-section">
+    <div class="section-label">Имя и фамилия:</div>
+    <input class="input-field" id="manualName" placeholder="Иванов Иван" />
+  </div>
+
+  <div class="error-banner" id="errorBanner">Заполните все поля</div>
+
+  <button class="btn btn-green" onclick="submitManual()" style="margin-bottom: 10px;">Записать</button>
+  <button class="btn btn-gray" onclick="backToScan()">Отмена</button>
+</div>
+
+<!-- Модальное окно -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-icon" id="modalIcon"></div>
+    <div class="modal-title" id="modalTitle"></div>
+    <div class="modal-sub" id="modalSub"></div>
+    <button class="btn" id="modalBtn" onclick="closeModal()">Ок, далее сканировать</button>
+  </div>
+</div>
+
+<script>
+const API_URL = 'YOUR_API_URL';
+const VOLUNTEER_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
+
+let scanning = true;
+let selectedEvent = null;
+let invalidData = null;
+let events = [];
+
+async function loadEvents() {
+  try {
+    const r = await fetch(`${API_URL}/api/events?token=${VOLUNTEER_TOKEN}`);
+    const data = await r.json();
+    events = data.events || [];
+  } catch(e) {
+    events = [];
+  }
+  renderEventList();
+}
+
+function renderEventList() {
+  const list = document.getElementById('eventList');
+  list.innerHTML = '';
+  events.forEach(ev => {
+    const icon = ev.type === 'online' ? '💻' : '🏢';
+    const div = document.createElement('div');
+    div.className = 'event-item';
+    div.dataset.id = ev.id;
+    div.textContent = `${icon} ${ev.title} · ${ev.date}`;
+    div.onclick = () => selectEvent(div, ev.id);
+    list.appendChild(div);
+  });
+  const other = document.createElement('div');
+  other.className = 'event-item other';
+  other.id = 'otherItem';
+  other.textContent = '+ Другое мероприятие';
+  other.onclick = () => selectEvent(other, 'other');
+  list.appendChild(other);
+}
+
+function selectEvent(el, id) {
+  document.querySelectorAll('.event-item').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedEvent = id;
+  const extra = document.getElementById('extraFields');
+  if (id === 'other') {
+    extra.classList.add('active');
+  } else {
+    extra.classList.remove('active');
+    document.getElementById('otherEventName').value = '';
+    document.getElementById('otherEventDate').value = '';
+  }
+}
+
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }
+    });
+    const video = document.getElementById('video');
+    video.srcObject = stream;
+    video.play();
+    requestAnimationFrame(tick);
+  } catch(e) {
+    document.getElementById('header-sub').textContent = 'Нет доступа к камере';
+  }
+}
+
+function tick() {
+  if (!scanning) return;
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(img.data, img.width, img.height);
+    if (code && code.data) {
+      scanning = false;
+      checkQR(code.data);
+      return;
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+async function checkQR(code) {
+  try {
+    const r = await fetch(`${API_URL}/api/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, token: VOLUNTEER_TOKEN })
+    });
+    const data = await r.json();
+
+    if (data.status === 'ok') {
+      showModal('success', '✓', data.name, `${data.event}\n${data.date}`);
+    } else if (data.status === 'already') {
+      showModal('warning', '!', 'Уже отмечен', `${data.name}\nвход в ${data.time}`);
+    } else if (data.status === 'expired') {
+      showInvalid(data.message, data.detail);
+    } else {
+      showManual(null);
+    }
+  } catch(e) {
+    showModal('warning', '!', 'Ошибка', 'Нет соединения с сервером');
+  }
+}
+
+function showModal(type, icon, title, sub) {
+  document.getElementById('modalIcon').textContent = icon;
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalTitle').className = `modal-title ${type}`;
+  document.getElementById('modalSub').textContent = sub;
+  const btn = document.getElementById('modalBtn');
+  if (type === 'warning') {
+    btn.className = 'btn btn-amber';
+  } else {
+    btn.className = 'btn btn-green';
+  }
+  document.getElementById('modalOverlay').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('active');
+  scanning = true;
+  requestAnimationFrame(tick);
+}
+
+function showManual(inv) {
+  scanning = false;
+  document.getElementById('cameraWrap').classList.add('hidden');
+  document.getElementById('scanPanel').style.display = 'none';
+  document.getElementById('manualPanel').classList.add('active');
+  document.getElementById('errorBanner').classList.remove('active');
+  document.getElementById('manualName').value = '';
+  selectedEvent = null;
+  document.querySelectorAll('.event-item').forEach(e => e.classList.remove('selected'));
+  document.getElementById('extraFields').classList.remove('active');
+
+  const invPanel = document.getElementById('invalidPanel');
+  if (inv) {
+    document.getElementById('invalidTitle').textContent = inv.title;
+    document.getElementById('invalidSub').textContent = inv.sub;
+    invPanel.classList.add('active');
+    document.getElementById('manualTitle').textContent = 'Записать вручную';
+  } else {
+    invPanel.classList.remove('active');
+    document.getElementById('manualTitle').textContent = 'Вписать вручную';
+  }
+}
+
+function showInvalid(message, detail) {
+  showManual({ title: message || 'Билет недействителен', sub: detail || '' });
+}
+
+async function submitManual() {
+  const name = document.getElementById('manualName').value.trim();
+  const banner = document.getElementById('errorBanner');
+
+  if (!name || !selectedEvent) {
+    banner.textContent = 'Заполните все поля';
+    banner.classList.add('active');
+    return;
+  }
+
+  let eventTitle = '';
+  let eventDate = '';
+  let isOther = false;
+
+  if (selectedEvent === 'other') {
+    eventTitle = document.getElementById('otherEventName').value.trim();
+    eventDate = document.getElementById('otherEventDate').value.trim();
+    if (!eventTitle || !eventDate) {
+      banner.textContent = 'Укажите название и дату мероприятия';
+      banner.classList.add('active');
+      return;
+    }
+    isOther = true;
+  } else {
+    const ev = events.find(e => e.id == selectedEvent);
+    if (ev) { eventTitle = ev.title; eventDate = ev.date; }
+  }
+
+  banner.classList.remove('active');
+
+  try {
+    const r = await fetch(`${API_URL}/api/manual`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name, event_id: selectedEvent,
+        event_title: eventTitle,
+        event_date: eventDate,
+        is_other: isOther,
+        token: VOLUNTEER_TOKEN
+      })
+    });
+    const data = await r.json();
+    if (data.ok) {
+      backToScan();
+      showModal('success', '✓', 'Записан вручную', `${name}\n${eventTitle}`);
+    } else {
+      banner.textContent = data.error || 'Ошибка записи';
+      banner.classList.add('active');
+    }
+  } catch(e) {
+    banner.textContent = 'Нет соединения с сервером';
+    banner.classList.add('active');
+  }
+}
+
+function backToScan() {
+  document.getElementById('cameraWrap').classList.remove('hidden');
+  document.getElementById('scanPanel').style.display = 'block';
+  document.getElementById('manualPanel').classList.remove('active');
+  scanning = true;
+  requestAnimationFrame(tick);
+}
+
+loadEvents();
+startCamera();
+</script>
+</body>
+</html>
