@@ -392,7 +392,9 @@ let events = [];
 
 async function loadEvents() {
   try {
-    const r = await fetch(`${API_URL}/api/events?token=${VOLUNTEER_TOKEN}`);
+    const r = await fetch(`${API_URL}/api/events?token=${VOLUNTEER_TOKEN}`, {
+      headers: { 'ngrok-skip-browser-warning': '1' }
+    });
     const data = await r.json();
     events = data.events || [];
   } catch(e) {
@@ -473,11 +475,13 @@ async function checkQR(code) {
   try {
     const r = await fetch(`${API_URL}/api/scan`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': '1'
+      },
       body: JSON.stringify({ code, token: VOLUNTEER_TOKEN })
     });
     const data = await r.json();
-
     if (data.status === 'ok') {
       showModal('success', '✓', data.name, `${data.event}\n${data.date}`);
     } else if (data.status === 'already') {
@@ -572,7 +576,10 @@ async function submitManual() {
   try {
     const r = await fetch(`${API_URL}/api/manual`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': '1'
+      },
       body: JSON.stringify({
         name, event_id: selectedEvent,
         event_title: eventTitle,
